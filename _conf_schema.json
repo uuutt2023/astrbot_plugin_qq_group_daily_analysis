@@ -980,6 +980,73 @@
             }
         }
     },
+    "jev": {
+        "description": "[Jev 判断] Jev 决策模型设置",
+        "type": "object",
+        "hint": "通过 Jev 决策网关做分析预筛：判断这批聊天值不值得生成报告。Key、地址、模型都在网关那边配。",
+        "items": {
+            "enabled": {
+                "type": "bool",
+                "description": "启用 Jev 预筛",
+                "hint": "总开关。关闭时只按消息条数阈值判断是否分析。",
+                "default": false
+            },
+            "proxy_url": {
+                "type": "string",
+                "description": "网关代理地址",
+                "hint": "Jev 决策网关的地址，如 http://127.0.0.1:8770。Docker 跨容器时填容器名并带上令牌。",
+                "default": ""
+            },
+            "proxy_protocol": {
+                "type": "string",
+                "description": "请求协议",
+                "hint": "网关里登记的协议类型。同一协议可以登记多个入口，网关会按优先级和负载均衡挑。",
+                "options": [
+                    "systemone",
+                    "decisions",
+                    "custom"
+                ],
+                "labels": [
+                    "SystemOne（官方 Jev / TypeSafe）",
+                    "OpenAI Decisions",
+                    "Custom（自定义协议）"
+                ],
+                "default": "systemone"
+            },
+            "gate_enabled": {
+                "type": "bool",
+                "description": "启用预筛判定",
+                "hint": "判断这批聊天值不值得生成报告。不值得时跳过本次分析，省下大模型开销。",
+                "default": true
+            },
+            "threshold": {
+                "type": "float",
+                "description": "预筛阈值",
+                "hint": "Jev 给出的概率达到该值才算值得生成报告。",
+                "default": 0.5
+            },
+            "max_state_chars": {
+                "type": "int",
+                "description": "发送上下文长度上限",
+                "hint": "超出部分截掉更早的消息。",
+                "default": 2000
+            },
+            "max_messages": {
+                "type": "int",
+                "description": "带入的消息条数",
+                "hint": "送进 Jev 的消息条数上限，从最新一条往回取。",
+                "default": 120
+            },
+            "prompt": {
+                "type": "text",
+                "description": "Jev 提示词",
+                "hint": "留空＝用内置提示词。改这里就是改问 Jev 的话。",
+                "editor_mode": true,
+                "editor_language": "markdown",
+                "default": ""
+            }
+        }
+    },
     "analysis_features": {
         "description": "分析功能开关",
         "type": "object",

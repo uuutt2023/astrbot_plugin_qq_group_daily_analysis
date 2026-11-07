@@ -677,6 +677,52 @@ class ConfigManager:
         """获取画图提示词专用 Provider ID"""
         return self._get_scalar("llm", "drawing_prompt_provider_id", "")
 
+    def get_jev_config(self) -> dict[str, object]:
+        """获取 Jev 预筛配置组（网关地址、协议名与判定参数）。"""
+        return self.get_group("jev")
+
+    def get_jev_enabled(self) -> bool:
+        """是否启用 Jev 预筛。"""
+        return bool(self._get_scalar("jev", "enabled", False))
+
+    def get_jev_proxy_url(self) -> str:
+        """Jev 决策网关地址。"""
+        return str(self._get_scalar("jev", "proxy_url", "") or "").strip()
+
+    def get_jev_proxy_protocol(self) -> str:
+        """Jev 请求协议名。"""
+        protocol = str(self._get_scalar("jev", "proxy_protocol", "systemone") or "")
+        return protocol if protocol in ("systemone", "decisions", "custom") else "systemone"
+
+    def get_jev_gate_enabled(self) -> bool:
+        """是否启用预筛判定本身。"""
+        return bool(self._get_scalar("jev", "gate_enabled", True))
+
+    def get_jev_threshold(self) -> float:
+        """Jev 预筛阈值。"""
+        try:
+            return float(self._get_scalar("jev", "threshold", 0.5))
+        except (TypeError, ValueError):
+            return 0.5
+
+    def get_jev_max_state_chars(self) -> int:
+        """Jev 发送上下文长度上限。"""
+        try:
+            return int(self._get_scalar("jev", "max_state_chars", 2000))
+        except (TypeError, ValueError):
+            return 2000
+
+    def get_jev_max_messages(self) -> int:
+        """Jev 带入的消息条数上限。"""
+        try:
+            return int(self._get_scalar("jev", "max_messages", 120))
+        except (TypeError, ValueError):
+            return 120
+
+    def get_jev_prompt(self) -> str:
+        """Jev 预筛提示词，留空表示使用内置提示词。"""
+        return str(self._get_scalar("jev", "prompt", "") or "")
+
     def get_keep_original_persona(self) -> bool:
         """获取是否继承会话原始人格设定"""
         return self._get_scalar("analysis_features", "keep_original_persona", False)

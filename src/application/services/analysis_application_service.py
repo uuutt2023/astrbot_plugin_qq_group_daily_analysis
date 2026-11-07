@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping
 
     from ...domain.repositories.analysis_repository import IAnalysisProvider
+    from ...domain.repositories.jev_repository import IJevGate
     from ...domain.repositories.persistence_repository import (
         ICheckpointStore,
         IIncrementalStore,
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
         UserActivityRanking,
         UserTitle,
     )
+    from ...domain.value_objects.jev_gate import JevGateDecision
     from ...domain.value_objects.unified_message import (
         UnifiedMessage,
     )
@@ -113,6 +115,7 @@ class AnalysisApplicationService:
     incremental_merge_service: IncrementalMergeService | None
     checkpoint_store: ICheckpointStore | None
     html_render: Callable[..., Awaitable[str | bytes | None]] | None
+    jev_gate: IJevGate | None
     _task_guard: TaskGuard
     llm_semaphore: asyncio.Semaphore
     _incremental_service: IncrementalAnalysisService
@@ -131,6 +134,7 @@ class AnalysisApplicationService:
         incremental_merge_service: IncrementalMergeService | None = None,
         checkpoint_store: ICheckpointStore | None = None,
         html_render: Callable[..., Awaitable[str | bytes | None]] | None = None,
+        jev_gate: IJevGate | None = None,
     ) -> None:
         """初始化分析应用服务。
 
@@ -146,6 +150,7 @@ class AnalysisApplicationService:
             incremental_merge_service: 增量合并领域服务。
             checkpoint_store: 检查点持久化仓储。
             html_render: HTML 渲染函数。
+            jev_gate: Jev 预筛端口，缺省不做预筛。
         """
         self.config_manager = config_manager
         self.bot_manager = bot_manager
@@ -158,6 +163,7 @@ class AnalysisApplicationService:
         self.incremental_merge_service = incremental_merge_service
         self.checkpoint_store = checkpoint_store
         self.html_render = html_render
+        self.jev_gate = jev_gate
 
         max_concurrent = max(1, int(self.config_manager.get_llm_max_concurrent()))
         self._task_guard = TaskGuard(max_concurrent)
@@ -174,6 +180,7 @@ class AnalysisApplicationService:
             incremental_store=self.incremental_store,
             incremental_merge_service=self.incremental_merge_service,
             checkpoint_store=self.checkpoint_store,
+            jev_gate=jev_gate,
         )
 
         self._recovery_service = AnalysisRecoveryService(
@@ -399,6 +406,22 @@ class AnalysisApplicationService:
                 return {
                     "success": False,
                     "reason": "below_threshold",
+                    "error": skip_msg,
+                    "message": skip_msg,
+                    "cleaned_count": len(unified_messages),
+                    "threshold": threshold,
+                }
+
+            gate_decision = await self._run_jev_gate(unified_messages)
+            if gate_decision is not None and gate_decision.worth_reporting is False:
+                skip_msg = (
+                    f"Jev 预筛判断这批聊天不值得生成报告（{gate_decision.reason}），"
+                    "已跳过本次日报生成"
+                )
+                logger.info(f"群 {group_id} Jev 预筛未通过：{gate_decision.reason}")
+                return {
+                    "success": False,
+                    "reason": "not_worth_reporting",
                     "error": skip_msg,
                     "message": skip_msg,
                     "cleaned_count": len(unified_messages),
@@ -719,6 +742,22 @@ class AnalysisApplicationService:
             bot_self_ids=bot_self_ids,
             detected_language=detected_language,
         )
+
+    async def _run_jev_gate(
+        self, messages: list[UnifiedMessage]
+    ) -> JevGateDecision | None:
+        """跑 Jev 预筛，判断这批聊天值不值得生成报告。
+
+        未接入预筛端口、调用失败或没有结论时返回 None，调用方按放行处理：
+        预筛是优化，不该拦住正常分析。
+        """
+        if self.jev_gate is None:
+            return None
+        try:
+            return await self.jev_gate.evaluate(messages)
+        except Exception as e:
+            logger.warning(f"Jev 预筛异常，按放行处理：{e}")
+            return None
 
     async def _calculate_daily_statistics(
         self,

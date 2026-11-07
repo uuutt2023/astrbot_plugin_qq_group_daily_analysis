@@ -25,6 +25,7 @@ from .pipeline_context import PipelineContext
 
 if TYPE_CHECKING:
     from ...domain.repositories.analysis_repository import IAnalysisProvider
+    from ...domain.repositories.jev_repository import IJevGate
     from ...domain.repositories.persistence_repository import (
         ICheckpointStore,
         IIncrementalStore,
@@ -53,6 +54,7 @@ class IncrementalAnalysisService:
     incremental_store: IIncrementalStore | None
     incremental_merge_service: IncrementalMergeService | None
     checkpoint_store: ICheckpointStore | None
+    jev_gate: IJevGate | None
     _message_cleaner: MessageCleanerService
 
     def __init__(
@@ -67,6 +69,7 @@ class IncrementalAnalysisService:
         incremental_store: IIncrementalStore | None = None,
         incremental_merge_service: IncrementalMergeService | None = None,
         checkpoint_store: ICheckpointStore | None = None,
+        jev_gate: IJevGate | None = None,
     ) -> None:
         """初始化增量分析服务。
 
@@ -81,6 +84,7 @@ class IncrementalAnalysisService:
             incremental_store: 增量存储仓储。
             incremental_merge_service: 增量合并领域服务。
             checkpoint_store: 检查点仓储。
+            jev_gate: Jev 预筛端口，缺省不做预筛。
         """
         self.config_manager = config_manager
         self.bot_manager = bot_manager
@@ -92,6 +96,17 @@ class IncrementalAnalysisService:
         self.incremental_store = incremental_store
         self.incremental_merge_service = incremental_merge_service
         self.checkpoint_store = checkpoint_store
+        self.jev_gate = jev_gate
+
+    async def _run_jev_gate(self, messages: list[UnifiedMessage]):
+        """跑 Jev 预筛；未接入或调用失败时返回 None（放行）。"""
+        if self.jev_gate is None:
+            return None
+        try:
+            return await self.jev_gate.evaluate(messages)
+        except Exception as e:
+            logger.warning(f"Jev 预筛异常，按放行处理：{e}")
+            return None
 
     async def execute_incremental_analysis(
         self,
@@ -277,6 +292,17 @@ class IncrementalAnalysisService:
             unified_messages.sort(key=lambda msg: (msg.timestamp, msg.message_id))
             if len(unified_messages) > min_messages:
                 unified_messages = unified_messages[:min_messages]
+
+            gate_decision = await self._run_jev_gate(unified_messages)
+            if gate_decision is not None and gate_decision.worth_reporting is False:
+                logger.info(
+                    f"群 {group_id} 增量分析：Jev 预筛未通过（{gate_decision.reason}），跳过本批次"
+                )
+                return {
+                    "success": False,
+                    "reason": "not_worth_reporting",
+                    "messages_count": len(unified_messages),
+                }
 
             async with pipeline.step(AnalysisStage.STATS_ANALYSIS) as step:
                 statistics = await asyncio.to_thread(

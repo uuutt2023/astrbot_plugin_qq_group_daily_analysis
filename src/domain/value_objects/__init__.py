@@ -27,6 +27,7 @@ from .analysis_results import (
     TokenUsage,
     UserTitle,
 )
+from .jev_gate import JevGateDecision
 from .platform_capabilities import PLATFORM_CAPABILITIES, PlatformCapabilities
 from .task_event import TaskEvent
 from .task_status import TaskStatus
@@ -54,6 +55,7 @@ __all__ = [
     "GroupHistoryTopicPayload",
     "GroupStatistics",
     "IncrementalTriggerStatePayload",
+    "JevGateDecision",
     "MessageContent",
     "MessageContentType",
     "OneBotAlbumPayload",

@@ -46,6 +46,7 @@ from .src.entrypoints.host_api import EventFilters, HostHtmlRenderer, StarInitia
 from .src.infrastructure.analysis.llm_analyzer import LLMAnalyzer
 from .src.infrastructure.config.config_manager import ConfigManager
 from .src.infrastructure.drawing.drawing_client import DrawingClient
+from .src.infrastructure.jev.gate import JevGate
 from .src.infrastructure.messaging.message_sender import MessageSender
 from .src.infrastructure.persistence.checkpoint_store import CheckpointStore
 from .src.infrastructure.persistence.event_deduplication_store import (
@@ -168,6 +169,9 @@ class GroupDailyAnalysis(Star):
         self.incremental_store = IncrementalStore(self)
         self.incremental_merge_service = IncrementalMergeService()
 
+        # 4.5 Jev 预筛（通过 Jev 决策网关判断这批聊天值不值得分析）
+        self.jev_gate = JevGate(self.config_manager)
+
         # 5. 应用层
         self.analysis_service = AnalysisApplicationService(
             self.config_manager,
@@ -181,6 +185,7 @@ class GroupDailyAnalysis(Star):
             incremental_merge_service=self.incremental_merge_service,
             checkpoint_store=self.checkpoint_store,
             html_render=cast("HostHtmlRenderer", self).html_render,
+            jev_gate=self.jev_gate,
         )
         self.drawing_client = DrawingClient(self.config_manager)
         self.comic_service = ComicApplicationService(
@@ -448,6 +453,12 @@ class GroupDailyAnalysis(Star):
 
             if self.report_generator:
                 await self.report_generator.close()
+
+            if hasattr(self, "jev_gate"):
+                try:
+                    await self.jev_gate.close()
+                except Exception as e:
+                    logger.warning(f"关闭 Jev 预筛客户端失败: {e}")
 
             if hasattr(self, "event_dedup_store"):
                 try:
